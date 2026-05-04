@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import org.joml.Matrix4f;
@@ -15,18 +14,16 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import xaero.common.graphics.CustomRenderTypes;
 import xaero.common.icon.XaeroIcon;
 import xaero.hud.minimap.element.render.MinimapElementGraphics;
 import xaero.hud.minimap.element.render.MinimapElementRenderInfo;
-import xaero.hud.minimap.element.render.MinimapElementRenderer;
-import xaero.hud.minimap.radar.render.element.RadarRenderContext;
 import xaero.hud.minimap.radar.render.element.RadarRenderer;
 import xaeroplus.feature.render.DrawHelper;
 
 @Mixin(value = RadarRenderer.class, remap = false)
-public abstract class MixinRadarRenderer extends MinimapElementRenderer<Entity, RadarRenderContext> {
+public abstract class MixinRadarRenderer {
 
-    @Shadow private RenderType dotsRenderType;
     @Shadow private MultiBufferSource.BufferSource minimapBufferSource;
 
     private static final ThreadLocal<Entity> currentEntity = new ThreadLocal<>();
@@ -46,8 +43,9 @@ public abstract class MixinRadarRenderer extends MinimapElementRenderer<Entity, 
         currentEntity.set(e);
     }
 
-    @Inject(method = "renderIcon", at = @At("HEAD"), remap = false)
-    private void drawIconBackground(
+    // Inject at RETURN so renderIcon has already applied scale - we are now in post-scale space
+    @Inject(method = "renderIcon", at = @At("RETURN"), remap = false)
+    private void drawIconOverlay(
         XaeroIcon entityIcon, double optionalScale, double figureScale,
         float offY, boolean cave, PoseStack matrixStack, CallbackInfo ci
     ) {
@@ -57,7 +55,6 @@ public abstract class MixinRadarRenderer extends MinimapElementRenderer<Entity, 
 
         int relation = RelationTracker.getRelation(player);
         int argbColor = RelationTracker.getColor(relation);
-
         if ((argbColor >> 24 & 0xFF) == 0) return;
 
         float r = ((argbColor >> 16) & 0xFF) / 255f;
@@ -65,11 +62,12 @@ public abstract class MixinRadarRenderer extends MinimapElementRenderer<Entity, 
         float b = (argbColor & 0xFF) / 255f;
         float a = ((argbColor >> 24) & 0xFF) / 255f;
 
-        double clampedScale = Math.max(1.0, figureScale * optionalScale);
-        float half = (float)(31.0 / clampedScale) + 3f;
+        // At RETURN, scale has been applied by renderIcon
+        // Icon is -31 to +31 in post-scale space, draw slightly larger border
+        float half = 34f;
 
         Matrix4f matrix = matrixStack.last().pose();
-        VertexConsumer buf = minimapBufferSource.getBuffer(dotsRenderType);
+        VertexConsumer buf = minimapBufferSource.getBuffer(CustomRenderTypes.RADAR_NAME_BGS);
         DrawHelper.fillIntoExistingBuffer(matrix, buf, -half, -half, half, half, r, g, b, a);
     }
 }
